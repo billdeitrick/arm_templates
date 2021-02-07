@@ -1,0 +1,134 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "location": {
+            "type": "string"
+        },
+        "subnetName": {
+            "type": "string"
+        },
+        "virtualNetworkId": {
+            "type": "string"
+        },
+        "virtualMachineName": {
+            "type": "string"
+        },
+        "adminUsername": {
+            "type": "string"
+        },
+        "adminPublicKey": {
+            "type": "secureString"
+        }
+    },
+    "variables": {
+        "vnetId": "[parameters('virtualNetworkId')]",
+        "subnetRef": "[concat(variables('vnetId'), '/subnets/', parameters('subnetName'))]"
+    },
+    "resources": [
+        {
+            "name": "[concat(parameters('virtualMachineName'), '-nic')]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2018-10-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "subnet": {
+                                "id": "[variables('subnetRef')]"
+                            },
+                            "privateIPAllocationMethod": "Dynamic"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "name": "[parameters('virtualMachineName')]",
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2020-12-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/networkInterfaces/', concat(parameters('virtualMachineName'), '-nic'))]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B1s"
+                },
+                "storageProfile": {
+                    "osDisk": {
+                        "createOption": "fromImage",
+                        "managedDisk": {
+                            "storageAccountType": "StandardSSD_LRS"
+                        }
+                    },
+                    "imageReference": {
+                        "publisher": "Canonical",
+                        "offer": "UbuntuServer",
+                        "sku": "18.04-LTS",
+                        "version": "latest"
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('virtualMachineName'), '-nic'))]"
+                        }
+                    ]
+                },
+                "osProfile": {
+                    "computerName": "[parameters('virtualMachineName')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "linuxConfiguration": {
+                        "disablePasswordAuthentication": true,
+                        "ssh": {
+                            "publicKeys": [
+                                {
+                                    "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]",
+                                    "keyData": "[parameters('adminPublicKey')]"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true
+                    }
+                }
+            }
+        },
+        {
+            "name": "[concat('shutdown-computevm-', parameters('virtualMachineName'))]",
+            "type": "Microsoft.DevTestLab/schedules",
+            "apiVersion": "2017-04-26-preview",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Compute/virtualMachines/', parameters('virtualMachineName'))]"
+            ],
+            "properties": {
+                "status": "Enabled",
+                "taskType": "ComputeVmShutdownTask",
+                "dailyRecurrence": {
+                    "time": "01:00"
+                },
+                "timeZoneId": "Eastern Standard Time",
+                "targetResourceId": "[resourceId('Microsoft.Compute/virtualMachines', parameters('virtualMachineName'))]",
+                "notificationSettings": {
+                    "status": "Disabled",
+                    "notificationLocale": "en",
+                    "timeInMinutes": "30"
+                }
+            }
+        }
+    ],
+    "outputs": {
+        "adminUsername": {
+            "type": "string",
+            "value": "[parameters('adminUsername')]"
+        }
+    }
+}
